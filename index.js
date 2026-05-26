@@ -337,7 +337,21 @@ async function run() {
     // PAYMENTS
     // ======================
 
-   
+    app.post("/create-payment-intent", verifyToken, async (req, res) => {
+      const { price } = req.body;
+
+      const amount = parseInt(price * 100);
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+      });
+
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+    });
 
     app.post("/payments", verifyToken, async (req, res) => {
       const payment = req.body;
