@@ -409,44 +409,7 @@ async function run() {
     // SUBMISSIONS
     // ======================
 
-    app.post("/submissions", verifyToken, async (req, res) => {
-      const submission = req.body;
-
-      const payment = await paymentsCollection.findOne({
-        contestId: submission.contestId,
-        userEmail: req.decoded.email,
-      });
-
-      if (!payment) {
-        return res.status(403).send({
-          message: "You must register first",
-        });
-      }
-
-      const existingSubmission = await submissionsCollection.findOne({
-        contestId: submission.contestId,
-        participantEmail: req.decoded.email,
-      });
-
-      if (existingSubmission) {
-        return res.send({
-          message: "Already submitted",
-          insertedId: null,
-        });
-      }
-
-      const result = await submissionsCollection.insertOne({
-        contestId: submission.contestId,
-        contestName: submission.contestName,
-        participantEmail: req.decoded.email,
-        participantName: submission.participantName,
-        taskLink: submission.taskLink,
-        isWinner: false,
-        submittedAt: new Date(),
-      });
-
-      res.send(result);
-    });
+    
 
     // ======================
     // CREATOR SUBMISSIONS
