@@ -475,7 +475,64 @@ async function run() {
     // DECLARE WINNER
     // ======================
 
-    
+    app.patch(
+      "/submissions/winner/:id",
+      verifyToken,
+      verifyCreator,
+      async (req, res) => {
+
+        const id = req.params.id;
+
+        const submission = await submissionsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!submission) {
+          return res.status(404).send({
+            message: "Submission not found",
+          });
+        }
+
+        // reset previous winners of same contest
+        await submissionsCollection.updateMany(
+          {
+            contestId: submission.contestId,
+          },
+          {
+            $set: {
+              isWinner: false,
+            },
+          }
+        );
+
+        // set current winner
+        await submissionsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              isWinner: true,
+            },
+          }
+        );
+
+        // update contest winner info
+        await contestsCollection.updateOne(
+          {
+            _id: new ObjectId(submission.contestId),
+          },
+          {
+            $set: {
+              winnerEmail: submission.participantEmail,
+              winnerName: submission.participantName,
+            },
+          }
+        );
+
+        res.send({
+          success: true,
+        });
+      }
+    );
 
     // ======================
     // USER PARTICIPATED CONTESTS
