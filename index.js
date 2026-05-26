@@ -452,7 +452,40 @@ async function run() {
     // CREATOR SUBMISSIONS
     // ======================
 
-    
+    app.get(
+      "/submissions/creator/:email",
+      verifyToken,
+      verifyCreator,
+      async (req, res) => {
+
+        const email = req.params.email;
+
+        if (email !== req.decoded.email) {
+          return res.status(403).send({
+            message: "Forbidden access",
+          });
+        }
+
+        const contests = await contestsCollection
+          .find({ creatorEmail: email })
+          .toArray();
+
+        const contestIds = contests.map(
+          contest => contest._id.toString()
+        );
+
+        const result = await submissionsCollection
+          .find({
+            contestId: {
+              $in: contestIds,
+            },
+          })
+          .sort({ submittedAt: -1 })
+          .toArray();
+
+        res.send(result);
+      }
+    );
 
     // ======================
     // DECLARE WINNER
