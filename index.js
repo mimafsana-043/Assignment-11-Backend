@@ -452,7 +452,24 @@ async function run() {
     // CREATOR SUBMISSIONS
     // ======================
 
-    
+    app.get("/payments/check/:contestId/:email", verifyToken, async (req, res) => {
+      const { contestId, email } = req.params;
+
+      if (email !== req.decoded.email) {
+        return res.status(403).send({
+          message: "Forbidden access",
+        });
+      }
+
+      const payment = await paymentsCollection.findOne({
+        contestId,
+        userEmail: email,
+      });
+
+      res.send({
+        paid: !!payment,
+      });
+    });
 
     // ======================
     // DECLARE WINNER
