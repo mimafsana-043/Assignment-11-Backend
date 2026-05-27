@@ -3,16 +3,12 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-
-const {
-  MongoClient,
-  ServerApiVersion,
-  ObjectId,
-} = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
 const port = process.env.PORT || 5000;
+
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 // middleware
 app.use(
@@ -21,6 +17,7 @@ app.use(
       "http://localhost:5173",
       "http://localhost:5174",
       "https://assignment-11-frontend-bwnv.vercel.app",
+      "https://assignment-11-frontend-bwnv-git-main-mim-afsanas-projects.vercel.app",
     ],
     credentials: true,
   })
@@ -28,6 +25,12 @@ app.use(
 
 app.use(express.json());
 
+// root route first
+app.get("/", (req, res) => {
+  res.send("ContestHub server is running");
+});
+
+// MongoDB
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.4xpowit.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 const client = new MongoClient(uri, {
@@ -49,7 +52,7 @@ app.post("/jwt", async (req, res) => {
   res.send({ token });
 });
 
-// Verify Token
+// verify token
 const verifyToken = (req, res, next) => {
   if (!req.headers.authorization) {
     return res.status(401).send({
@@ -73,6 +76,8 @@ const verifyToken = (req, res, next) => {
 
 async function run() {
   try {
+    await client.connect();
+
     const database = client.db("contestHubDB");
 
     const usersCollection = database.collection("users");
@@ -106,10 +111,7 @@ async function run() {
       next();
     };
 
-    // ======================
     // USERS
-    // ======================
-
     app.post("/users", async (req, res) => {
       const user = req.body;
 
@@ -163,7 +165,6 @@ async function run() {
       });
     });
 
-    // temporary admin route
     app.patch("/users/admin/:email", async (req, res) => {
       const email = req.params.email;
 
@@ -207,10 +208,7 @@ async function run() {
       res.send(result);
     });
 
-    // ======================
     // CONTESTS
-    // ======================
-
     app.post("/contests", verifyToken, verifyCreator, async (req, res) => {
       const contest = req.body;
 
@@ -223,17 +221,13 @@ async function run() {
         taskInstruction: contest.taskInstruction,
         contestType: contest.contestType,
         deadline: contest.deadline,
-
         creatorEmail: req.decoded.email,
         creatorName: contest.creatorName,
-
         status: "pending",
         participantsCount: 0,
-
         winnerEmail: null,
         winnerName: null,
         winnerPhoto: null,
-
         createdAt: new Date(),
       };
 
@@ -259,27 +253,22 @@ async function run() {
       res.send(result);
     });
 
-    app.get(
-      "/contests/creator/:email",
-      verifyToken,
-      verifyCreator,
-      async (req, res) => {
-        const email = req.params.email;
+    app.get("/contests/creator/:email", verifyToken, verifyCreator, async (req, res) => {
+      const email = req.params.email;
 
-        if (email !== req.decoded.email) {
-          return res.status(403).send({
-            message: "Forbidden access",
-          });
-        }
-
-        const result = await contestsCollection
-          .find({ creatorEmail: email })
-          .sort({ createdAt: -1 })
-          .toArray();
-
-        res.send(result);
+      if (email !== req.decoded.email) {
+        return res.status(403).send({
+          message: "Forbidden access",
+        });
       }
-    );
+
+      const result = await contestsCollection
+        .find({ creatorEmail: email })
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      res.send(result);
+    });
 
     app.get("/contests/:id", async (req, res) => {
       const id = req.params.id;
@@ -297,57 +286,47 @@ async function run() {
       res.send(result);
     });
 
-    app.patch(
-      "/contests/approve/:id",
-      verifyToken,
-      verifyAdmin,
-      async (req, res) => {
-        const id = req.params.id;
+    app.patch("/contests/approve/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
 
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({
-            message: "Invalid contest id",
-          });
-        }
-
-        const result = await contestsCollection.updateOne(
-          { _id: new ObjectId(id) },
-          {
-            $set: {
-              status: "confirmed",
-            },
-          }
-        );
-
-        res.send(result);
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({
+          message: "Invalid contest id",
+        });
       }
-    );
 
-    app.patch(
-      "/contests/reject/:id",
-      verifyToken,
-      verifyAdmin,
-      async (req, res) => {
-        const id = req.params.id;
-
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({
-            message: "Invalid contest id",
-          });
+      const result = await contestsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            status: "confirmed",
+          },
         }
+      );
 
-        const result = await contestsCollection.updateOne(
-          { _id: new ObjectId(id) },
-          {
-            $set: {
-              status: "rejected",
-            },
-          }
-        );
+      res.send(result);
+    });
 
-        res.send(result);
+    app.patch("/contests/reject/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({
+          message: "Invalid contest id",
+        });
       }
-    );
+
+      const result = await contestsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            status: "rejected",
+          },
+        }
+      );
+
+      res.send(result);
+    });
 
     app.delete("/contests/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
@@ -365,10 +344,7 @@ async function run() {
       res.send(result);
     });
 
-    // ======================
     // PAYMENTS
-    // ======================
-
     app.post("/create-payment-intent", verifyToken, async (req, res) => {
       const { price } = req.body;
 
@@ -418,28 +394,24 @@ async function run() {
       res.send(paymentResult);
     });
 
-    app.get(
-      "/payments/check/:contestId/:email",
-      verifyToken,
-      async (req, res) => {
-        const { contestId, email } = req.params;
+    app.get("/payments/check/:contestId/:email", verifyToken, async (req, res) => {
+      const { contestId, email } = req.params;
 
-        if (email !== req.decoded.email) {
-          return res.status(403).send({
-            message: "Forbidden access",
-          });
-        }
-
-        const payment = await paymentsCollection.findOne({
-          contestId,
-          userEmail: email,
-        });
-
-        res.send({
-          paid: !!payment,
+      if (email !== req.decoded.email) {
+        return res.status(403).send({
+          message: "Forbidden access",
         });
       }
-    );
+
+      const payment = await paymentsCollection.findOne({
+        contestId,
+        userEmail: email,
+      });
+
+      res.send({
+        paid: !!payment,
+      });
+    });
 
     app.get("/payments/user/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
@@ -451,19 +423,14 @@ async function run() {
       }
 
       const result = await paymentsCollection
-        .find({
-          userEmail: email,
-        })
+        .find({ userEmail: email })
         .sort({ paidAt: -1 })
         .toArray();
 
       res.send(result);
     });
 
-    // ======================
     // SUBMISSIONS
-    // ======================
-
     app.post("/submissions", verifyToken, async (req, res) => {
       const submission = req.body;
 
@@ -530,70 +497,62 @@ async function run() {
       res.send(result);
     });
 
-    app.patch(
-      "/submissions/winner/:id",
-      verifyToken,
-      verifyAdmin,
-      async (req, res) => {
-        const id = req.params.id;
+    app.patch("/submissions/winner/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
 
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({
-            message: "Invalid submission id",
-          });
-        }
-
-        const submission = await submissionsCollection.findOne({
-          _id: new ObjectId(id),
-        });
-
-        if (!submission) {
-          return res.status(404).send({
-            message: "Submission not found",
-          });
-        }
-
-        await submissionsCollection.updateMany(
-          { contestId: submission.contestId },
-          {
-            $set: {
-              isWinner: false,
-            },
-          }
-        );
-
-        await submissionsCollection.updateOne(
-          { _id: new ObjectId(id) },
-          {
-            $set: {
-              isWinner: true,
-            },
-          }
-        );
-
-        await contestsCollection.updateOne(
-          { _id: new ObjectId(submission.contestId) },
-          {
-            $set: {
-              winnerEmail: submission.participantEmail,
-              winnerName: submission.participantName,
-              winnerPhoto: submission.participantPhoto || "",
-            },
-          }
-        );
-
-        res.send({
-          success: true,
-          winnerEmail: submission.participantEmail,
-          winnerName: submission.participantName,
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({
+          message: "Invalid submission id",
         });
       }
-    );
 
-    // ======================
+      const submission = await submissionsCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+      if (!submission) {
+        return res.status(404).send({
+          message: "Submission not found",
+        });
+      }
+
+      await submissionsCollection.updateMany(
+        { contestId: submission.contestId },
+        {
+          $set: {
+            isWinner: false,
+          },
+        }
+      );
+
+      await submissionsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            isWinner: true,
+          },
+        }
+      );
+
+      await contestsCollection.updateOne(
+        { _id: new ObjectId(submission.contestId) },
+        {
+          $set: {
+            winnerEmail: submission.participantEmail,
+            winnerName: submission.participantName,
+            winnerPhoto: submission.participantPhoto || "",
+          },
+        }
+      );
+
+      res.send({
+        success: true,
+        winnerEmail: submission.participantEmail,
+        winnerName: submission.participantName,
+      });
+    });
+
     // WINNING + LEADERBOARD
-    // ======================
-
     app.get("/winning-contests/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
 
@@ -647,16 +606,12 @@ async function run() {
     });
 
     console.log("MongoDB connected");
-  } finally {
-    // do not close client
+  } catch (error) {
+    console.error("MongoDB connection error:", error.message);
   }
 }
 
-run().catch(console.dir);
-
-app.get("/", (req, res) => {
-  res.send("ContestHub server is running");
-});
+run();
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
