@@ -14,7 +14,18 @@ const {
 const app = express();
 const port = process.env.PORT || 5000;
 
-app.use(cors());
+// middleware
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "https://assignment-11-frontend-bwnv.vercel.app",
+    ],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.4xpowit.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -69,10 +80,8 @@ async function run() {
     const paymentsCollection = database.collection("payments");
     const submissionsCollection = database.collection("submissions");
 
-    // Verify Admin
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded.email;
-
       const user = await usersCollection.findOne({ email });
 
       if (!user || user.role !== "admin") {
@@ -84,10 +93,8 @@ async function run() {
       next();
     };
 
-    // Verify Creator
     const verifyCreator = async (req, res, next) => {
       const email = req.decoded.email;
-
       const user = await usersCollection.findOne({ email });
 
       if (!user || user.role !== "creator") {
@@ -156,7 +163,7 @@ async function run() {
       });
     });
 
-    // Temporary: make first admin
+    // temporary admin route
     app.patch("/users/admin/:email", async (req, res) => {
       const email = req.params.email;
 
@@ -175,6 +182,12 @@ async function run() {
     app.patch("/users/role/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const { role } = req.body;
+
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({
+          message: "Invalid user id",
+        });
+      }
 
       if (!["user", "creator", "admin"].includes(role)) {
         return res.status(400).send({
@@ -271,6 +284,12 @@ async function run() {
     app.get("/contests/:id", async (req, res) => {
       const id = req.params.id;
 
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({
+          message: "Invalid contest id",
+        });
+      }
+
       const result = await contestsCollection.findOne({
         _id: new ObjectId(id),
       });
@@ -284,6 +303,12 @@ async function run() {
       verifyAdmin,
       async (req, res) => {
         const id = req.params.id;
+
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({
+            message: "Invalid contest id",
+          });
+        }
 
         const result = await contestsCollection.updateOne(
           { _id: new ObjectId(id) },
@@ -304,6 +329,12 @@ async function run() {
       verifyAdmin,
       async (req, res) => {
         const id = req.params.id;
+
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({
+            message: "Invalid contest id",
+          });
+        }
 
         const result = await contestsCollection.updateOne(
           { _id: new ObjectId(id) },
@@ -333,6 +364,7 @@ async function run() {
 
       res.send(result);
     });
+
     // ======================
     // PAYMENTS
     // ======================
@@ -386,8 +418,31 @@ async function run() {
       res.send(paymentResult);
     });
 
-    app.get("/payments/check/:contestId/:email", verifyToken, async (req, res) => {
-      const { contestId, email } = req.params;
+    app.get(
+      "/payments/check/:contestId/:email",
+      verifyToken,
+      async (req, res) => {
+        const { contestId, email } = req.params;
+
+        if (email !== req.decoded.email) {
+          return res.status(403).send({
+            message: "Forbidden access",
+          });
+        }
+
+        const payment = await paymentsCollection.findOne({
+          contestId,
+          userEmail: email,
+        });
+
+        res.send({
+          paid: !!payment,
+        });
+      }
+    );
+
+    app.get("/payments/user/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
 
       if (email !== req.decoded.email) {
         return res.status(403).send({
@@ -395,14 +450,14 @@ async function run() {
         });
       }
 
-      const payment = await paymentsCollection.findOne({
-        contestId,
-        userEmail: email,
-      });
+      const result = await paymentsCollection
+        .find({
+          userEmail: email,
+        })
+        .sort({ paidAt: -1 })
+        .toArray();
 
-      res.send({
-        paid: !!payment,
-      });
+      res.send(result);
     });
 
     // ======================
@@ -440,6 +495,7 @@ async function run() {
         contestName: submission.contestName,
         participantEmail: req.decoded.email,
         participantName: submission.participantName,
+        participantPhoto: submission.participantPhoto || "",
         taskLink: submission.taskLink,
         isWinner: false,
         submittedAt: new Date(),
@@ -448,183 +504,6 @@ async function run() {
       res.send(result);
     });
 
-    // ======================
-    // CREATOR SUBMISSIONS
-    // ======================
-
-    app.get("/payments/check/:contestId/:email", verifyToken, async (req, res) => {
-      const { contestId, email } = req.params;
-
-      if (email !== req.decoded.email) {
-        return res.status(403).send({
-          message: "Forbidden access",
-        });
-      }
-
-      const payment = await paymentsCollection.findOne({
-        contestId,
-        userEmail: email,
-      });
-
-      res.send({
-        paid: !!payment,
-      });
-    });
-
-    // ======================
-    // DECLARE WINNER
-    // ======================
-
-    app.patch(
-      "/submissions/winner/:id",
-      verifyToken,
-      verifyCreator,
-      async (req, res) => {
-
-        const id = req.params.id;
-
-        const submission = await submissionsCollection.findOne({
-          _id: new ObjectId(id),
-        });
-
-        if (!submission) {
-          return res.status(404).send({
-            message: "Submission not found",
-          });
-        }
-
-        // reset previous winners of same contest
-        await submissionsCollection.updateMany(
-          {
-            contestId: submission.contestId,
-          },
-          {
-            $set: {
-              isWinner: false,
-            },
-          }
-        );
-
-        // set current winner
-        await submissionsCollection.updateOne(
-          { _id: new ObjectId(id) },
-          {
-            $set: {
-              isWinner: true,
-            },
-          }
-        );
-
-        // update contest winner info
-        await contestsCollection.updateOne(
-          {
-            _id: new ObjectId(submission.contestId),
-          },
-          {
-            $set: {
-              winnerEmail: submission.participantEmail,
-              winnerName: submission.participantName,
-            },
-          }
-        );
-
-        res.send({
-          success: true,
-        });
-      }
-    );
-
-    // ======================
-    // USER PARTICIPATED CONTESTS
-    // ======================
-
-    app.get(
-      "/payments/user/:email",
-      verifyToken,
-      async (req, res) => {
-
-        const email = req.params.email;
-
-        if (email !== req.decoded.email) {
-          return res.status(403).send({
-            message: "Forbidden access",
-          });
-        }
-
-        const result = await paymentsCollection
-          .find({
-            userEmail: email,
-          })
-          .sort({ paidAt: -1 })
-          .toArray();
-
-        res.send(result);
-      }
-    );
-
-    // ======================
-    // USER WINNING CONTESTS
-    // ======================
-
-    app.get(
-      "/winning-contests/:email",
-      verifyToken,
-      async (req, res) => {
-
-        const email = req.params.email;
-
-        if (email !== req.decoded.email) {
-          return res.status(403).send({
-            message: "Forbidden access",
-          });
-        }
-
-        const result = await contestsCollection
-          .find({
-            winnerEmail: email,
-          })
-          .toArray();
-
-        res.send(result);
-      }
-    );
-
-    // ======================
-    // LEADERBOARD
-    // ======================
-
-   app.get("/leaderboard", async (req, res) => {
-  const winners = await contestsCollection
-    .find({
-      winnerEmail: { $exists: true, $ne: null },
-    })
-    .toArray();
-
-  const leaderboardMap = {};
-
-  winners.forEach(contest => {
-    if (!leaderboardMap[contest.winnerEmail]) {
-      leaderboardMap[contest.winnerEmail] = {
-        winnerName: contest.winnerName,
-        winnerEmail: contest.winnerEmail,
-        winnerPhoto: contest.winnerPhoto || "",
-        totalWins: 0,
-        totalPrize: 0,
-      };
-    }
-
-    leaderboardMap[contest.winnerEmail].totalWins += 1;
-    leaderboardMap[contest.winnerEmail].totalPrize += Number(contest.prizeMoney) || 0;
-  });
-
-  const leaderboard = Object.values(leaderboardMap).sort(
-    (a, b) => b.totalWins - a.totalWins
-  );
-
-  res.send(leaderboard);
-});
-
-
     app.get("/submissions", verifyToken, verifyAdmin, async (req, res) => {
       const result = await submissionsCollection
         .find()
@@ -632,49 +511,6 @@ async function run() {
         .toArray();
 
       res.send(result);
-    });
-
-    app.patch("/submissions/winner/:id", verifyToken, verifyAdmin, async (req, res) => {
-      const id = req.params.id;
-
-      if (!ObjectId.isValid(id)) {
-        return res.status(400).send({ message: "Invalid submission id" });
-      }
-
-      const submission = await submissionsCollection.findOne({
-        _id: new ObjectId(id),
-      });
-
-      if (!submission) {
-        return res.status(404).send({ message: "Submission not found" });
-      }
-
-      await submissionsCollection.updateMany(
-        { contestId: submission.contestId },
-        { $set: { isWinner: false } }
-      );
-
-      await submissionsCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { isWinner: true } }
-      );
-
-      await contestsCollection.updateOne(
-        { _id: new ObjectId(submission.contestId) },
-        {
-          $set: {
-            winnerEmail: submission.participantEmail,
-            winnerName: submission.participantName,
-            winnerPhoto: submission.participantPhoto || "",
-          },
-        }
-      );
-
-      res.send({
-        success: true,
-        winnerEmail: submission.participantEmail,
-        winnerName: submission.participantName,
-      });
     });
 
     app.get("/submissions/user/:email", verifyToken, async (req, res) => {
@@ -694,6 +530,69 @@ async function run() {
       res.send(result);
     });
 
+    app.patch(
+      "/submissions/winner/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({
+            message: "Invalid submission id",
+          });
+        }
+
+        const submission = await submissionsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!submission) {
+          return res.status(404).send({
+            message: "Submission not found",
+          });
+        }
+
+        await submissionsCollection.updateMany(
+          { contestId: submission.contestId },
+          {
+            $set: {
+              isWinner: false,
+            },
+          }
+        );
+
+        await submissionsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              isWinner: true,
+            },
+          }
+        );
+
+        await contestsCollection.updateOne(
+          { _id: new ObjectId(submission.contestId) },
+          {
+            $set: {
+              winnerEmail: submission.participantEmail,
+              winnerName: submission.participantName,
+              winnerPhoto: submission.participantPhoto || "",
+            },
+          }
+        );
+
+        res.send({
+          success: true,
+          winnerEmail: submission.participantEmail,
+          winnerName: submission.participantName,
+        });
+      }
+    );
+
+    // ======================
+    // WINNING + LEADERBOARD
+    // ======================
 
     app.get("/winning-contests/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
@@ -710,6 +609,41 @@ async function run() {
         .toArray();
 
       res.send(result);
+    });
+
+    app.get("/leaderboard", async (req, res) => {
+      const winners = await contestsCollection
+        .find({
+          winnerEmail: {
+            $exists: true,
+            $ne: null,
+          },
+        })
+        .toArray();
+
+      const leaderboardMap = {};
+
+      winners.forEach(contest => {
+        if (!leaderboardMap[contest.winnerEmail]) {
+          leaderboardMap[contest.winnerEmail] = {
+            winnerName: contest.winnerName,
+            winnerEmail: contest.winnerEmail,
+            winnerPhoto: contest.winnerPhoto || "",
+            totalWins: 0,
+            totalPrize: 0,
+          };
+        }
+
+        leaderboardMap[contest.winnerEmail].totalWins += 1;
+        leaderboardMap[contest.winnerEmail].totalPrize +=
+          Number(contest.prizeMoney) || 0;
+      });
+
+      const leaderboard = Object.values(leaderboardMap).sort(
+        (a, b) => b.totalWins - a.totalWins
+      );
+
+      res.send(leaderboard);
     });
 
     console.log("MongoDB connected");
