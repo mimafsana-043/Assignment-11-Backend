@@ -15,9 +15,8 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "http://localhost:5174",
-      "https://assignment-11-frontend-bwnv.vercel.app",
-      "https://assignment-11-frontend-bwnv-git-main-mim-afsanas-projects.vercel.app",
+      "https://contesthub-d358c.web.app",
+      "https://contesthub-d358c.firebaseapp.com",
     ],
     credentials: true,
   })
