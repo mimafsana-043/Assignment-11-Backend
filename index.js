@@ -15,6 +15,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
+      "http://localhost:5174",
       "https://contesthub-d358c.web.app",
       "https://contesthub-d358c.firebaseapp.com",
     ],
